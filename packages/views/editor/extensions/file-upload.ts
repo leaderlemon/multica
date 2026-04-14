@@ -3,6 +3,19 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import { createSafeId } from "@multica/core/utils";
 
+// Polyfill for crypto.randomUUID for browsers that don't support it
+const randomUUID = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback: generate UUID-like string
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 /** Find and remove a fileCard node by uploadId. */
  
 function removeUploadingFileCard(editor: any, uploadId: string) {
@@ -110,7 +123,11 @@ export async function uploadAndInsertFile(
     }
   } else {
     // Non-image: insert skeleton fileCard → upload → finalize with real URL
+<<<<<<< Updated upstream
     const uploadId = createSafeId();
+=======
+    const uploadId = randomUUID();
+>>>>>>> Stashed changes
     const cardAttrs = { filename: file.name, href: "", fileSize: file.size, uploading: true, uploadId };
     const insertContent = { type: "fileCard", attrs: cardAttrs };
     if (pos !== undefined) {

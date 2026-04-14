@@ -1,3 +1,16 @@
+// Polyfill for crypto.randomUUID for browsers that don't support it
+const randomUUID = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return randomUUID();
+  }
+  // Fallback: generate UUID-like string
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 import type {
   Issue,
   CreateIssueRequest,
@@ -137,7 +150,11 @@ export class ApiClient {
   }
 
   private async fetch<T>(path: string, init?: RequestInit): Promise<T> {
+<<<<<<< Updated upstream
     const rid = createRequestId();
+=======
+    const rid = randomUUID().slice(0, 8);
+>>>>>>> Stashed changes
     const start = Date.now();
     const method = init?.method ?? "GET";
 
@@ -651,7 +668,11 @@ export class ApiClient {
     if (opts?.issueId) formData.append("issue_id", opts.issueId);
     if (opts?.commentId) formData.append("comment_id", opts.commentId);
 
+<<<<<<< Updated upstream
     const rid = createRequestId();
+=======
+    const rid = randomUUID().slice(0, 8);
+>>>>>>> Stashed changes
     const start = Date.now();
     this.logger.info("→ POST /api/upload-file", { rid });
 
