@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -17,6 +18,14 @@ import (
 // the Codex-specific JSON-RPC methods.
 type hermesBackend struct {
 	cfg Config
+}
+
+// killProcess sends SIGKILL to the process to unblock any hanging I/O operations.
+func killProcess(cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Signal(syscall.SIGKILL)
 }
 
 func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
@@ -93,6 +102,8 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 	// Start reading stdout in background.
 	readerDone := make(chan struct{})
+	lastActivity := time.Now() // track last message received
+
 	go func() {
 		defer close(readerDone)
 		scanner := bufio.NewScanner(stdout)
@@ -102,6 +113,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			if line == "" {
 				continue
 			}
+			lastActivity = time.Now() // update activity timestamp on each message
 			c.handleLine(line)
 		}
 		c.closeAllPending(fmt.Errorf("hermes process exited"))
@@ -232,7 +244,46 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		cancel()
 
 		// Wait for the reader goroutine to finish so all output is accumulated.
-		<-readerDone
+		// Use watchdog to detect hung processes: if no activity for 10min (+3min grace),
+		// or overall timeout of 20min, kill the process to unblock readerDone.
+	 watchdogTimeout := 10 * time.Minute
+	 watchdogGrace := 3 * time.Minute
+	 overallTimeout := 20 * time.Minute
+	 watchdogInterval := 30 * time.Second
+	 watchdog := time.NewTicker(watchdogInterval)
+	 defer watchdog.Stop()
+
+	 sessionStart := startTime
+
+	 for {
+		select {
+		case <-readerDone:
+			// Reader finished normally, all output accumulated
+			goto outputAccumulated
+		case <-watchdog.C:
+			now := time.Now()
+			inactive := now.Sub(lastActivity)
+			total := now.Sub(sessionStart)
+
+			// Cap at overall timeout
+			if total >= overallTimeout {
+				b.cfg.Logger.Warn("hermes watchdog: overall timeout reached", "duration", total.Round(time.Second))
+				killProcess(cmd)
+				<-readerDone
+				goto outputAccumulated
+			}
+
+			// Activity timeout: no messages for 10min + 3min grace
+			if inactive >= watchdogTimeout+watchdogGrace {
+				b.cfg.Logger.Warn("hermes watchdog: activity timeout", "inactive", inactive.Round(time.Second), "lastMsg", lastActivity.Sub(sessionStart).Round(time.Second))
+				killProcess(cmd)
+				<-readerDone
+				goto outputAccumulated
+			}
+		}
+	 }
+
+ outputAccumulated:
 
 		outputMu.Lock()
 		finalOutput := output.String()

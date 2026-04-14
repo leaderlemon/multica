@@ -960,3 +960,59 @@ func (h *Handler) GetIssueGCCheck(w http.ResponseWriter, r *http.Request) {
 		"updated_at": issue.UpdatedAt.Time,
 	})
 }
+
+// UpdateIssueStatusForDaemon allows the daemon to update issue status (e.g., when a task completes).
+// This is called by the daemon after a task finishes when the agent didn't update issue status via CLI.
+func (h *Handler) UpdateIssueStatusForDaemon(w http.ResponseWriter, r *http.Request) {
+	issueID := chi.URLParam(r, "issueId")
+	workspaceID := middleware.DaemonWorkspaceIDFromContext(r.Context())
+	if workspaceID == "" {
+		writeError(w, http.StatusForbidden, "daemon workspace not found")
+		return
+	}
+
+	// Verify the issue belongs to this workspace
+	issue, err := h.Queries.GetIssue(r.Context(), parseUUID(issueID))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+	if uuidToString(issue.WorkspaceID) != workspaceID {
+		writeError(w, http.StatusNotFound, "issue not found")
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Validate status value
+	validStatuses := map[string]bool{
+		"backlog": true, "todo": true, "in_progress": true,
+		"in_review": true, "done": true, "blocked": true, "cancelled": true,
+	}
+	if !validStatuses[req.Status] {
+		writeError(w, http.StatusBadRequest, "invalid status value")
+		return
+	}
+
+	updatedIssue, err := h.Queries.UpdateIssue(r.Context(), db.UpdateIssueParams{
+		ID:          issue.ID,
+		Status:      pgtype.Text{String: req.Status, Valid: true},
+		AssigneeType: issue.AssigneeType,
+		AssigneeID:   issue.AssigneeID,
+		DueDate:     issue.DueDate,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update issue status")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": updatedIssue.Status,
+	})
+}

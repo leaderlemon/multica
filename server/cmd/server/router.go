@@ -143,6 +143,7 @@ func NewRouter(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus) chi.Route
 		r.Get("/tasks/{taskId}/messages", h.ListTaskMessages)
 
 		r.Get("/issues/{issueId}/gc-check", h.GetIssueGCCheck)
+		r.Patch("/issues/{issueId}/status", h.UpdateIssueStatusForDaemon)
 	})
 
 	// Protected API routes

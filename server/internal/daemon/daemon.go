@@ -907,6 +907,17 @@ func (d *Daemon) handleTask(ctx context.Context, task Task) {
 			if failErr := d.client.FailTask(ctx, task.ID, fmt.Sprintf("complete task failed: %s", err.Error())); failErr != nil {
 				taskLog.Error("fail task fallback also failed", "error", failErr)
 			}
+		} else {
+			// For assignment-triggered tasks, auto-update issue status to "done"
+			// after successful completion. Comment-triggered tasks should NOT
+			// change issue status unless explicitly requested (per agent instructions).
+			if task.IssueID != "" && task.TriggerCommentID == "" && task.ChatSessionID == "" {
+				if statusErr := d.client.UpdateIssueStatus(ctx, task.IssueID, "done"); statusErr != nil {
+					taskLog.Warn("update issue status failed", "error", statusErr)
+				} else {
+					taskLog.Info("issue status updated to done", "issue_id", task.IssueID)
+				}
+			}
 		}
 	}
 

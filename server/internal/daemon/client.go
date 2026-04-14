@@ -213,6 +213,14 @@ func (c *Client) GetIssueGCCheck(ctx context.Context, issueID string) (*IssueGCS
 	return &resp, nil
 }
 
+// UpdateIssueStatus updates an issue's status. Used by the daemon when an agent
+// completes a task but didn't update issue status via CLI.
+func (c *Client) UpdateIssueStatus(ctx context.Context, issueID, status string) error {
+	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/issues/%s/status", issueID), map[string]string{
+		"status": status,
+	}, nil)
+}
+
 func (c *Client) Deregister(ctx context.Context, runtimeIDs []string) error {
 	return c.postJSON(ctx, "/api/daemon/deregister", map[string]any{
 		"runtime_ids": runtimeIDs,
